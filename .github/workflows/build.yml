@@ -117,7 +117,7 @@ jobs:
 
       - name: Install Tauri CLI
         working-directory: app
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       - name: Build frontend
         working-directory: ui
