@@ -12,193 +12,41 @@ on:
       - main
       - master
   workflow_dispatch:
-    inputs:
-      skip_tests:
-        description: 'Skip tests'
-        required: false
-        default: 'false'
-        type: boolean
-      debug_build:
-        description: 'Build in debug mode'
-        required: false
-        default: 'false'
-        type: boolean
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  RUST_TOOLCHAIN: stable
-  NODE_VERSION: '20'
-  PNPM_VERSION: '8'
-  CARGO_INCREMENTAL: 1
-
 permissions:
   contents: write
-  security-events: write
-  id-token: write
-  attestations: write
 
 jobs:
-  # ============================================================================
-  # Version Injection Job
-  # ============================================================================
-  prepare:
-    name: Prepare Release
-    runs-on: ubuntu-22.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
-      is_release: ${{ steps.version.outputs.is_release }}
-      tag: ${{ steps.version.outputs.tag }}
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Extract version from tag
-        id: version
-        run: |
-          TAG="${{ github.ref_name }}"
-          IS_RELEASE="false"
-          IS_PRERELEASE="false"
-          
-          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            VERSION="${TAG#v}"
-            IS_RELEASE="true"
-            if echo "$VERSION" | grep -qE '(alpha|beta|rc|dev)'; then
-              IS_PRERELEASE="true"
-            fi
-          else
-            VERSION="0.0.0-dev"
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
-          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-          
-          echo "Version: $VERSION"
-          echo "Is Release: $IS_RELEASE"
-          echo "Is Pre-release: $IS_PRERELEASE"
-
-      - name: Inject version into Cargo.toml
-        if: steps.version.outputs.is_release == 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Updating Cargo.toml to version $VERSION"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" core/Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" app/Cargo.toml
-          cat Cargo.toml | grep "^version"
-
-      - name: Inject version into package.json
-        if: steps.version.outputs.is_release == 'true'
-        working-directory: ui
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Updating package.json to version $VERSION"
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-          cat package.json | grep "\"version\""
-
-      - name: Inject version into tauri.conf.json
-        if: steps.version.outputs.is_release == 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Updating tauri.conf.json to version $VERSION"
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" app/tauri.conf.json
-          cat app/tauri.conf.json | grep "\"version\""
-
-      - name: Commit version changes
-        if: steps.version.outputs.is_release == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "chore: release v${{ steps.version.outputs.version }}"
-          git push || echo "Push failed, continuing with build"
-
-  # ============================================================================
-  # Lint & Security Audit Job
-  # ============================================================================
-  lint:
-    name: Lint & Audit
-    needs: prepare
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          targets: ${{ matrix.target }}
           components: rustfmt, clippy
 
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-lint-
-
-      - name: Check Rust formatting
-        run: cargo fmt --check
-
-      - name: Run Rust lints
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
-      - name: Run security audit
-        run: cargo audit
-
-      - name: Install cargo-deny
-        run: cargo install cargo-deny
-
-      - name: Run license compliance check
-        run: cargo deny check licenses
-
-      - name: Generate audit report
-        run: cargo audit --json > audit-report.json 2>/dev/null || true
-
-      - name: Generate license report
-        run: cargo deny list > license-report.txt 2>/dev/null || true
-
-      - name: Upload audit reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-reports
-          path: |
-            audit-report.json
-            license-report.txt
-          retention-days: 30
-
-  # ============================================================================
-  # Build Job - Windows x64
-  # ============================================================================
-  build-windows-x64:
-    name: Build Windows x64
-    needs: prepare
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
       - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
@@ -227,320 +75,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target/
-          key: ${{ runner.os }}-cargo-target-release-x64-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-target-release-x64-
+            ${{ runner.os }}-cargo-target-
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install UI dependencies
-        working-directory: ui
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup code signing (optional)
-        if: env.WINDOWS_CERTIFICATE != ''
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          if ($env:WINDOWS_CERTIFICATE) {
-            $cert = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
-            $certPath = Join-Path $env:RUNNER_TEMP "certificate.pfx"
-            [IO.File]::WriteAllBytes($certPath, $cert)
-            echo "CERTIFICATE_PATH=$certPath" >> $env:GITHUB_OUTPUT
-            echo "CODE_SIGNING=true" >> $env:GITHUB_OUTPUT
-          }
-
-      - name: Build Tauri application
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        with:
-          tauriScript: pnpm tauri
-          args: --target x86_64-pc-windows-msvc
-
-      - name: Verify Windows binaries
-        shell: pwsh
-        run: |
-          $bundlePath = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
-          if (Test-Path "$bundlePath/nsis") {
-            Get-ChildItem "$bundlePath/nsis/*.exe" | ForEach-Object {
-              $size = $_.Length
-              if ($size -lt 1MB) {
-                Write-Error "Binary too small: $($_.Name) ($size bytes)"
-                exit 1
-              }
-              Write-Host "Verified: $($_.Name) ($size bytes)"
-            }
-          }
-
-      - name: Generate checksums (Windows)
-        shell: pwsh
-        run: |
-          $bundlePath = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
-          $checksums256 = @()
-          $checksums512 = @()
-          
-          if (Test-Path "$bundlePath/nsis") {
-            Get-ChildItem "$bundlePath/nsis/*.exe" | ForEach-Object {
-              $hash256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-              $hash512 = (Get-FileHash $_.FullName -Algorithm SHA512).Hash
-              $checksums256 += "$hash256  $($_.Name)"
-              $checksums512 += "$hash512  $($_.Name)"
-              Write-Host "SHA256: $hash256  $($_.Name)"
-            }
-          }
-          
-          $checksums256 | Out-File -FilePath "$bundlePath/SHA256SUMS.txt" -Encoding utf8
-          $checksums512 | Out-File -FilePath "$bundlePath/SHA512SUMS.txt" -Encoding utf8
-
-      - name: Collect debug symbols
-        shell: pwsh
-        run: |
-          $debugDir = "debug-symbols"
-          New-Item -ItemType Directory -Force -Path $debugDir
-          $targetDir = "src-tauri/target/x86_64-pc-windows-msvc/release"
-          if (Test-Path "$targetDir/*.pdb") {
-            Copy-Item "$targetDir/*.pdb" $debugDir -ErrorAction SilentlyContinue
-          }
-
-      - name: Collect binary sizes
-        shell: pwsh
-        run: |
-          $bundlePath = "src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
-          $sizes = @()
-          if (Test-Path "$bundlePath/nsis") {
-            Get-ChildItem "$bundlePath/nsis/*.exe" | ForEach-Object {
-              $sizes += "$($_.Name) $($_.Length) bytes"
-            }
-          }
-          $sizes | Out-File -FilePath "binary-sizes-windows-x64.txt" -Encoding utf8
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: novatunnel-windows-x64
-          path: |
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.exe
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/*.msi
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/SHA256SUMS.txt
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**/SHA512SUMS.txt
-          retention-days: 30
-
-      - name: Upload debug symbols
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-symbols-windows-x64
-          path: debug-symbols/
-          retention-days: 30
-          if-no-files-found: ignore
-
-      - name: Upload binary sizes
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-sizes-windows-x64
-          path: binary-sizes-windows-x64.txt
-          retention-days: 30
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-windows-x64
-          path: |
-            src-tauri/target/x86_64-pc-windows-msvc/release/build/*/output
-          retention-days: 30
-
-  # ============================================================================
-  # Build Job - Windows ARM64
-  # ============================================================================
-  build-windows-arm64:
-    name: Build Windows ARM64
-    needs: prepare
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-pc-windows-msvc
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/index
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-cache-
-
-      - name: Cache Cargo git
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache Rust target
-        uses: actions/cache@v4
-        with:
-          path: target/
-          key: ${{ runner.os }}-cargo-target-release-arm64-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-release-arm64-
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Install UI dependencies
-        working-directory: ui
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Tauri application
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        with:
-          tauriScript: pnpm tauri
-          args: --target aarch64-pc-windows-msvc
-
-      - name: Generate checksums (Windows ARM64)
-        shell: pwsh
-        run: |
-          $bundlePath = "src-tauri/target/aarch64-pc-windows-msvc/release/bundle"
-          $checksums256 = @()
-          $checksums512 = @()
-          
-          if (Test-Path "$bundlePath/nsis") {
-            Get-ChildItem "$bundlePath/nsis/*.exe" | ForEach-Object {
-              $hash256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-              $hash512 = (Get-FileHash $_.FullName -Algorithm SHA512).Hash
-              $checksums256 += "$hash256  $($_.Name)"
-              $checksums512 += "$hash512  $($_.Name)"
-            }
-          }
-          
-          $checksums256 | Out-File -FilePath "$bundlePath/SHA256SUMS.txt" -Encoding utf8
-          $checksums512 | Out-File -FilePath "$bundlePath/SHA512SUMS.txt" -Encoding utf8
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: novatunnel-windows-arm64
-          path: |
-            src-tauri/target/aarch64-pc-windows-msvc/release/bundle/**/*.exe
-            src-tauri/target/aarch64-pc-windows-msvc/release/bundle/**/SHA256SUMS.txt
-            src-tauri/target/aarch64-pc-windows-msvc/release/bundle/**/SHA512SUMS.txt
-          retention-days: 30
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-windows-arm64
-          path: |
-            src-tauri/target/aarch64-pc-windows-msvc/release/build/*/output
-          retention-days: 30
-
-  # ============================================================================
-  # Build Job - Linux x64
-  # ============================================================================
-  build-linux-x64:
-    name: Build Linux x64
-    needs: prepare
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/index
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-cache-
-
-      - name: Cache Cargo git
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache Rust target
-        uses: actions/cache@v4
-        with:
-          path: target/
-          key: ${{ runner.os }}-cargo-target-release-x64-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-release-x64-
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+          version: 8
           run_install: false
 
       - name: Cache pnpm store
@@ -552,712 +99,99 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install Linux dependencies
-        run: |
-          for i in 1 2 3; do
-            sudo apt-get update && break || sleep 5
-          done
-          for i in 1 2 3; do
-            sudo apt-get install -y \
-              libwebkit2gtk-4.0-dev \
-              libgtk-3-dev \
-              libappindicator3-dev \
-              librsvg2-dev \
-              patchelf \
-              libssl-dev \
-              libayatana-appindicator3-dev && break || sleep 5
-          done
-
-      - name: Install UI dependencies
-        working-directory: ui
-        run: |
-          for i in 1 2 3; do
-            pnpm install --frozen-lockfile && break || sleep 5
-          done
-
-      - name: Build Tauri application
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        with:
-          tauriScript: pnpm tauri
-          args: --target x86_64-unknown-linux-gnu
-
-      - name: Generate checksums (Linux x64)
-        run: |
-          BUNDLE_PATH="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
-          cd "$BUNDLE_PATH"
-          
-          CHECKSUMS256=""
-          CHECKSUMS512=""
-          
-          for dir in appimage deb tar.gz; do
-            if [ -d "$dir" ]; then
-              for file in "$dir"/*; do
-                if [ -f "$file" ]; then
-                  HASH256=$(sha256sum "$file" | cut -d' ' -f1)
-                  HASH512=$(sha512sum "$file" | cut -d' ' -f1)
-                  CHECKSUMS256="$CHECKSUMS256$HASH256  $(basename $file)\n"
-                  CHECKSUMS512="$CHECKSUMS512$HASH512  $(basename $file)\n"
-                fi
-              done
-            fi
-          done
-          
-          echo -e "$CHECKSUMS256" > SHA256SUMS.txt
-          echo -e "$CHECKSUMS512" > SHA512SUMS.txt
-
-      - name: Collect debug symbols
-        run: |
-          mkdir -p debug-symbols
-          TARGET_DIR="src-tauri/target/x86_64-unknown-linux-gnu/release"
-          find "$TARGET_DIR" -name "*.debug" -exec cp {} debug-symbols/ \; 2>/dev/null || true
-          find "$TARGET_DIR" -name "*.dwp" -exec cp {} debug-symbols/ \; 2>/dev/null || true
-
-      - name: Collect binary sizes
-        run: |
-          BUNDLE_PATH="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
-          find "$BUNDLE_PATH" -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" \) -exec stat --format="%n %s bytes" {} \; > binary-sizes-linux-x64.txt
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: novatunnel-linux-x64
-          path: |
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/**/*.AppImage
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/**/*.deb
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/**/*.tar.gz
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/**/SHA256SUMS.txt
-            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/**/SHA512SUMS.txt
-          retention-days: 30
-
-      - name: Upload debug symbols
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-symbols-linux-x64
-          path: debug-symbols/
-          retention-days: 30
-          if-no-files-found: ignore
-
-      - name: Upload binary sizes
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-sizes-linux-x64
-          path: binary-sizes-linux-x64.txt
-          retention-days: 30
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-linux-x64
-          path: |
-            src-tauri/target/x86_64-unknown-linux-gnu/release/build/*/output
-          retention-days: 30
-
-  # ============================================================================
-  # Build Job - Linux ARM64
-  # ============================================================================
-  build-linux-arm64:
-    name: Build Linux ARM64
-    needs: prepare
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/index
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-cache-
-
-      - name: Cache Cargo git
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache Rust target
-        uses: actions/cache@v4
-        with:
-          path: target/
-          key: ${{ runner.os }}-cargo-target-release-arm64-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-release-arm64-
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Install cross-compilation tools
+        if: matrix.platform == 'linux-x64'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libwebkit2gtk-4.0-dev:arm64 \
-            libgtk-3-dev:arm64 \
-            libappindicator3-dev:arm64 \
-            librsvg2-dev:arm64 \
+            libwebkit2gtk-4.0-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
             patchelf \
-            libssl-dev:arm64
+            libssl-dev \
+            libayatana-appindicator3-dev
 
       - name: Install UI dependencies
         working-directory: ui
         run: pnpm install --frozen-lockfile
 
+      - name: Check Rust formatting
+        run: cargo fmt --check
+
+      - name: Run Rust lints
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
       - name: Build Tauri application
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tauriScript: pnpm tauri
-          args: --target aarch64-unknown-linux-gnu
 
-      - name: Generate checksums (Linux ARM64)
+      - name: Generate checksums
+        shell: bash
         run: |
-          BUNDLE_PATH="src-tauri/target/aarch64-unknown-linux-gnu/release/bundle"
-          cd "$BUNDLE_PATH"
+          mkdir -p release
+          cd src-tauri/target/release/bundle || cd src-tauri/target/release/bundle
           
-          CHECKSUMS256=""
-          CHECKSUMS512=""
-          
-          for dir in appimage deb tar.gz; do
-            if [ -d "$dir" ]; then
-              for file in "$dir"/*; do
-                if [ -f "$file" ]; then
-                  HASH256=$(sha256sum "$file" | cut -d' ' -f1)
-                  HASH512=$(sha512sum "$file" | cut -d' ' -f1)
-                  CHECKSUMS256="$CHECKSUMS256$HASH256  $(basename $file)\n"
-                  CHECKSUMS512="$CHECKSUMS512$HASH512  $(basename $file)\n"
-                fi
-              done
-            fi
-          done
-          
-          echo -e "$CHECKSUMS256" > SHA256SUMS.txt
-          echo -e "$CHECKSUMS512" > SHA512SUMS.txt
+          find . -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.dmg" \) -exec sh -c '
+            for file; do
+              if command -v sha256sum &> /dev/null; then
+                sha256sum "$file" >> ../../../../../../release/SHA256SUMS.txt
+              elif command -v shasum &> /dev/null; then
+                shasum -a 256 "$file" >> ../../../../../../release/SHA512SUMS.txt
+              fi
+            done
+          ' _ {} \;
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: novatunnel-linux-arm64
+          name: novatunnel-${{ matrix.platform }}
           path: |
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/**/*.AppImage
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/**/*.deb
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/**/*.tar.gz
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/**/SHA256SUMS.txt
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/**/SHA512SUMS.txt
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.tar.gz
+            src-tauri/target/release/bundle/**/*.dmg
           retention-days: 30
 
       - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-linux-arm64
+          name: build-logs-${{ matrix.platform }}
           path: |
-            src-tauri/target/aarch64-unknown-linux-gnu/release/build/*/output
-          retention-days: 30
-
-  # ============================================================================
-  # Build Job - macOS Intel
-  # ============================================================================
-  build-macos-intel:
-    name: Build macOS Intel
-    needs: prepare
-    runs-on: macos-13
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/index
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-cache-
-
-      - name: Cache Cargo git
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache Rust target
-        uses: actions/cache@v4
-        with:
-          path: target/
-          key: ${{ runner.os }}-cargo-target-release-intel-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-release-intel-
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install UI dependencies
-        working-directory: ui
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Apple Code Signing
-        if: env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Build Tauri application
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        with:
-          tauriScript: pnpm tauri
-          args: --target x86_64-apple-darwin
-
-      - name: Generate checksums (macOS Intel)
-        run: |
-          BUNDLE_PATH="src-tauri/target/x86_64-apple-darwin/release/bundle"
-          cd "$BUNDLE_PATH"
-          
-          CHECKSUMS256=""
-          CHECKSUMS512=""
-          
-          for file in dmg/*.dmg dmg/*.app; do
-            if [ -f "$file" ]; then
-              HASH256=$(shasum -a 256 "$file" | cut -d' ' -f1)
-              HASH512=$(shasum -a 512 "$file" | cut -d' ' -f1)
-              CHECKSUMS256="$CHECKSUMS256$HASH256  $(basename $file)\n"
-              CHECKSUMS512="$CHECKSUMS512$HASH512  $(basename $file)\n"
-            fi
-          done
-          
-          echo -e "$CHECKSUMS256" > SHA256SUMS.txt
-          echo -e "$CHECKSUMS512" > SHA512SUMS.txt
-
-      - name: Collect debug symbols
-        run: |
-          mkdir -p debug-symbols
-          TARGET_DIR="src-tauri/target/x86_64-apple-darwin/release"
-          find "$TARGET_DIR" -name "*.dSYM" -exec cp -r {} debug-symbols/ \; 2>/dev/null || true
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: novatunnel-macos-intel
-          path: |
-            src-tauri/target/x86_64-apple-darwin/release/bundle/**/*.dmg
-            src-tauri/target/x86_64-apple-darwin/release/bundle/**/SHA256SUMS.txt
-            src-tauri/target/x86_64-apple-darwin/release/bundle/**/SHA512SUMS.txt
-          retention-days: 30
-
-      - name: Upload debug symbols
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-symbols-macos-intel
-          path: debug-symbols/
-          retention-days: 30
+            src-tauri/target/release/build/*/output
+          retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-macos-intel
-          path: |
-            src-tauri/target/x86_64-apple-darwin/release/build/*/output
-          retention-days: 30
-
-  # ============================================================================
-  # Build Job - macOS Apple Silicon
-  # ============================================================================
-  build-macos-apple-silicon:
-    name: Build macOS Apple Silicon
-    needs: prepare
-    runs-on: macos-14
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/index
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-cache-
-
-      - name: Cache Cargo git
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache Rust target
-        uses: actions/cache@v4
-        with:
-          path: target/
-          key: ${{ runner.os }}-cargo-target-release-apple-silicon-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-release-apple-silicon-
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Install UI dependencies
-        working-directory: ui
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Apple Code Signing
-        if: env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Build Tauri application
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        with:
-          tauriScript: pnpm tauri
-          args: --target aarch64-apple-darwin
-
-      - name: Generate checksums (macOS Apple Silicon)
-        run: |
-          BUNDLE_PATH="src-tauri/target/aarch64-apple-darwin/release/bundle"
-          cd "$BUNDLE_PATH"
-          
-          CHECKSUMS256=""
-          CHECKSUMS512=""
-          
-          for file in dmg/*.dmg dmg/*.app; do
-            if [ -f "$file" ]; then
-              HASH256=$(shasum -a 256 "$file" | cut -d' ' -f1)
-              HASH512=$(shasum -a 512 "$file" | cut -d' ' -f1)
-              CHECKSUMS256="$CHECKSUMS256$HASH256  $(basename $file)\n"
-              CHECKSUMS512="$CHECKSUMS512$HASH512  $(basename $file)\n"
-            fi
-          done
-          
-          echo -e "$CHECKSUMS256" > SHA256SUMS.txt
-          echo -e "$CHECKSUMS512" > SHA512SUMS.txt
-
-      - name: Collect debug symbols
-        run: |
-          mkdir -p debug-symbols
-          TARGET_DIR="src-tauri/target/aarch64-apple-darwin/release"
-          find "$TARGET_DIR" -name "*.dSYM" -exec cp -r {} debug-symbols/ \; 2>/dev/null || true
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: novatunnel-macos-apple-silicon
-          path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/**/*.dmg
-            src-tauri/target/aarch64-apple-darwin/release/bundle/**/SHA256SUMS.txt
-            src-tauri/target/aarch64-apple-darwin/release/bundle/**/SHA512SUMS.txt
-          retention-days: 30
-
-      - name: Upload debug symbols
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-symbols-macos-apple-silicon
-          path: debug-symbols/
-          retention-days: 30
-          if-no-files-found: ignore
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-macos-apple-silicon
-          path: |
-            src-tauri/target/aarch64-apple-darwin/release/build/*/output
-          retention-days: 30
-
-  # ============================================================================
-  # Generate Reports Job
-  # ============================================================================
-  reports:
-    name: Generate Reports
-    needs: prepare
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-reports-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Generate dependency tree
-        run: cargo tree > dependency-tree.txt
-
-      - name: Generate audit report
-        run: |
-          cargo install cargo-audit
-          cargo audit --json > audit-report.json 2>/dev/null || true
-          cargo audit > audit-report.txt 2>/dev/null || true
-
-      - name: Generate license report
-        run: |
-          cargo install cargo-deny
-          cargo deny list > license-report.txt 2>/dev/null || true
-
-      - name: Generate build duration report
-        run: |
-          echo "Build Duration Report" > build-duration.txt
-          echo "Generated at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> build-duration.txt
-          echo "Workflow: ${{ github.workflow }}" >> build-duration.txt
-          echo "Run ID: ${{ github.run_id }}" >> build-duration.txt
-
-      - name: Upload reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-reports
-          path: |
-            dependency-tree.txt
-            audit-report.json
-            audit-report.txt
-            license-report.txt
-            build-duration.txt
-          retention-days: 30
-
-  # ============================================================================
-  # Verify & Publish Job
-  # ============================================================================
-  verify-and-publish:
-    name: Verify & Publish
-    needs: [
-      build-windows-x64,
-      build-windows-arm64,
-      build-linux-x64,
-      build-linux-arm64,
-      build-macos-intel,
-      build-macos-apple-silicon,
-      reports
-    ]
+  release:
+    name: Create Release
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download all build artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-          pattern: novatunnel-*
-          merge-multiple: false
-
-      - name: Download debug symbols
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/debug
-          merge-multiple: true
-          pattern: debug-symbols-*
-
-      - name: Download reports
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/reports
-          merge-multiple: true
-          pattern: build-reports
-
-      - name: Download binary sizes
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/sizes
-          merge-multiple: true
-          pattern: binary-sizes-*
-
-      - name: Verify all artifacts exist
-        run: |
-          echo "=== Verifying Build Artifacts ==="
-          find artifacts -type f | head -100
-          
-          # Verify at least one binary exists per platform
-          PLATFORMS=("windows-x64" "windows-arm64" "linux-x64" "linux-arm64" "macos-intel" "macos-apple-silicon")
-          for platform in "${PLATFORMS[@]}"; do
-            if ! find artifacts -path "*novatunnel-$platform*" -type f | grep -q .; then
-              echo "Warning: No artifacts found for $platform"
-            else
-              echo "OK: $platform artifacts found"
-            fi
-          done
-
-      - name: Verify SHA256 checksums
-        run: |
-          echo "=== Verifying SHA256 Checksums ==="
-          find artifacts -name "SHA256SUMS.txt" -exec sh -c '
-            echo "Verifying: $1"
-            cd "$(dirname "$1")"
-            sha256sum -c "$(basename "$1")" || echo "Checksum verification failed for $1"
-          ' _ {} \;
 
       - name: Create consolidated checksums
         run: |
           mkdir -p release
-          find artifacts -name "SHA256SUMS.txt" -exec cat {} \; > release/SHA256SUMS.txt
-          find artifacts -name "SHA512SUMS.txt" -exec cat {} \; > release/SHA512SUMS.txt
-          echo "=== SHA256SUMS.txt ==="
-          cat release/SHA256SUMS.txt
-          echo ""
-          echo "=== SHA512SUMS.txt ==="
-          cat release/SHA512SUMS.txt
-
-      - name: Generate SBOM
-        run: |
-          # Install syft for SBOM generation
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-          
-          # Generate SBOM for source
-          syft dir:. -o spdx-json=sbom-source.spdx.json -o cyclonedx=sbom-source.cyclonedx.json || true
-          
-          # Generate SBOM for binaries
-          find artifacts -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "*.dmg" -o -name "*.deb" \) -exec sh -c '
-            for file; do
-              syft "$file" -o spdx-json="sbom-$(basename "$file").spdx.json" || true
-            done
-          ' _ {} \;
-
-      - name: Generate SLSA provenance
-        uses: slsa-framework/slsa-github-generator@v1.4.0
-        with:
-          base64-subjects: "${{ needs.build-windows-x64.outputs.subjects }}"
-          upload-assets: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-
-      - name: Generate build attestation
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: 'artifacts/**/*'
-        continue-on-error: true
+          find artifacts -name "SHA256SUMS.txt" -exec cat {} \; > release/SHA256SUMS.txt 2>/dev/null || true
+          echo "=== Checksums ==="
+          cat release/SHA256SUMS.txt 2>/dev/null || echo "No checksums found"
 
       - name: Determine release type
         id: release_type
@@ -1274,63 +208,25 @@ jobs:
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
           echo "is_draft=$IS_DRAFT" >> $GITHUB_OUTPUT
 
-      - name: Generate categorized release notes
+      - name: Generate release notes
         id: release_notes
         run: |
-          # Get previous tag
           PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1)
           CURRENT_TAG="${{ github.ref_name }}"
           
           if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$CURRENT_TAG" ]; then
-            RANGE="$PREV_TAG..$CURRENT_TAG"
+            NOTES=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG".."$CURRENT_TAG")
           else
-            RANGE="-20"
+            NOTES=$(git log --pretty=format:"- %s (%h)" -20)
           fi
           
-          # Categorize commits
-          FEATURES=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -iE '^(feat|feature|add|new)' || echo "- No features")
-          FIXES=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -iE '^(fix|bug|patch|resolve)' || echo "- No fixes")
-          PERFORMANCE=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -iE '^(perf|performance|optimize|speed)' || echo "- No performance improvements")
-          SECURITY=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -iE '^(security|vuln|cve|auth)' || echo "- No security updates")
-          DOCS=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -iE '^(doc|docs|readme|comment)' || echo "- No documentation changes")
-          BREAKING=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -iE '^(breaking|BREAKING)' || echo "- No breaking changes")
-          OTHER=$(git log --pretty=format:"- %s (%h)" $RANGE | grep -viE '^(feat|feature|add|new|fix|bug|patch|resolve|perf|performance|optimize|speed|security|vuln|cve|auth|doc|docs|readme|comment|breaking|BREAKING|chore|ci|build|test|refactor|style)' || echo "- No other changes")
+          echo "$NOTES" > /tmp/release_notes.txt
           
-          cat > /tmp/release_notes.md << 'NOTES_EOF'
-          ## NovaTunnel ${{ github.ref_name }}
-          
-          ### 🚀 Features
-          $FEATURES
-          
-          ### 🐛 Fixes
-          $FIXES
-          
-          ### ⚡ Performance
-          $PERFORMANCE
-          
-          ### 🔒 Security
-          $SECURITY
-          
-          ### 📚 Documentation
-          $DOCS
-          
-          ### ⚠️ Breaking Changes
-          $BREAKING
-          
-          ### 📦 Other Changes
-          $OTHER
-          
-          ### 🔐 Verification
-          Download `SHA256SUMS.txt` and verify checksums:
-          ```bash
-          sha256sum -c SHA256SUMS.txt
-          ```
-          
-          ### 📋 SBOM
-          Software Bill of Materials (SBOM) files are attached for supply chain transparency.
-          NOTES_EOF
-          
-          cat /tmp/release_notes.md
+          {
+            echo "notes<<EOF"
+            cat /tmp/release_notes.txt
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -1339,88 +235,24 @@ jobs:
           draft: ${{ steps.release_type.outputs.is_draft }}
           prerelease: ${{ steps.release_type.outputs.is_prerelease }}
           generate_release_notes: true
-          body_path: /tmp/release_notes.md
+          body: |
+            ## NovaTunnel ${{ github.ref_name }}
+            
+            ### Changes
+            ${{ steps.release_notes.outputs.notes }}
+            
+            ### Verification
+            Download `SHA256SUMS.txt` and verify checksums:
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```
           files: |
-            artifacts/novatunnel-windows-x64/**/*.exe
-            artifacts/novatunnel-windows-x64/**/*.msi
-            artifacts/novatunnel-windows-arm64/**/*.exe
-            artifacts/novatunnel-linux-x64/**/*.AppImage
-            artifacts/novatunnel-linux-x64/**/*.deb
-            artifacts/novatunnel-linux-x64/**/*.tar.gz
-            artifacts/novatunnel-linux-arm64/**/*.AppImage
-            artifacts/novatunnel-linux-arm64/**/*.deb
-            artifacts/novatunnel-macos-intel/**/*.dmg
-            artifacts/novatunnel-macos-apple-silicon/**/*.dmg
-            release/SHA256SUMS.txt
-            release/SHA512SUMS.txt
-            sbom-*.spdx.json
-            sbom-*.cyclonedx.json
-            artifacts/debug/**/*
-            artifacts/reports/**/*
-            artifacts/sizes/**/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-
-      - name: Retry release upload on failure
-        if: failure()
-        uses: softprops/action-gh-release@v1
-        with:
-          name: NovaTunnel ${{ github.ref_name }}
-          draft: ${{ steps.release_type.outputs.is_draft }}
-          prerelease: ${{ steps.release_type.outputs.is_prerelease }}
-          generate_release_notes: true
-          body_path: /tmp/release_notes.md
-          files: |
-            artifacts/novatunnel-windows-x64/**/*.exe
-            artifacts/novatunnel-linux-x64/**/*.AppImage
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.tar.gz
+            artifacts/**/*.dmg
             release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish release
-        if: steps.release_type.outputs.is_draft == 'false'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 5
-            });
-            
-            const draftRelease = releases.data.find(r => r.draft && r.tag_name === context.ref.replace('refs/tags/', ''));
-            
-            if (draftRelease) {
-              await github.rest.repos.updateRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: draftRelease.id,
-                draft: false
-              });
-              console.log(`Published release: ${draftRelease.tag_name}`);
-            }
-
-      - name: Clean up old releases
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 20
-            });
-            
-            const tagReleases = releases.data.filter(r => r.tag_name.startsWith('v') && !r.draft);
-            
-            if (tagReleases.length > 10) {
-              const toDelete = tagReleases.slice(10);
-              for (const release of toDelete) {
-                await github.rest.repos.deleteRelease({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.id
-                });
-                console.log(`Deleted release: ${release.tag_name}`);
-              }
-            }
