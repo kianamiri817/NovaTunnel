@@ -28,7 +28,6 @@
   },
   "bundle": {
     "active": true,
-    "category": "Network",
     "copyright": "",
     "icon": [
       "icons/32x32.png",
