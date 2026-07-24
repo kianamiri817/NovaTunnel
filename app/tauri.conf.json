@@ -5,7 +5,7 @@
   "identifier": "com.novatunnel.app",
   "build": {
     "beforeDevCommand": "cd ../ui && pnpm dev",
-    "beforeBuildCommand": "cd ../ui && pnpm build",
+    "beforeBuildCommand": "",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../ui/dist"
   },
