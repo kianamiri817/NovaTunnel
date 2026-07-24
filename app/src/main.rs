@@ -3,6 +3,7 @@
 use novatunnel_core::{
     config::Config,
     error::Result,
+    event::EventSender,
     tunnel::{TunnelManager, TunnelStats},
 };
 use std::sync::Arc;
@@ -10,14 +11,14 @@ use tauri::State;
 
 struct AppState {
     tunnel_manager: Arc<TunnelManager>,
-    config: Arc<parking_lot::RwLock<Config>>,
+    config: Arc<tokio::sync::RwLock<Config>>,
     event_sender: EventSender,
 }
 
 #[tauri::command]
 async fn get_status(state: State<'_, AppState>) -> Result<serde_json::Value> {
-    let is_connected = state.tunnel_manager.is_connected();
-    let provider_name = state.tunnel_manager.get_provider_name();
+    let is_connected = state.tunnel_manager.is_connected().await;
+    let provider_name = state.tunnel_manager.get_provider_name().await;
     let stats = state.tunnel_manager.get_stats().await.unwrap_or_default();
 
     Ok(serde_json::json!({
@@ -42,12 +43,12 @@ async fn disconnect(state: State<'_, AppState>) -> Result<serde_json::Value> {
 
 #[tauri::command]
 async fn get_config(state: State<'_, AppState>) -> Result<Config> {
-    Ok(state.config.read().clone())
+    Ok(state.config.read().await.clone())
 }
 
 #[tauri::command]
 async fn update_config(state: State<'_, AppState>, config: Config) -> Result<serde_json::Value> {
-    *state.config.write() = config;
+    *state.config.write().await = config;
     Ok(serde_json::json!({ "success": true }))
 }
 
@@ -66,12 +67,12 @@ fn main() {
 
     let config = Config::load(std::path::Path::new("config.json")).unwrap_or_default();
 
-    let event_sender = novatunnel_core::event::EventSender::new(100);
+    let event_sender = EventSender::new(100);
     let tunnel_manager = Arc::new(TunnelManager::new(config.clone(), event_sender.clone()));
 
     let app_state = AppState {
         tunnel_manager,
-        config: Arc::new(parking_lot::RwLock::new(config)),
+        config: Arc::new(tokio::sync::RwLock::new(config)),
         event_sender,
     };
 

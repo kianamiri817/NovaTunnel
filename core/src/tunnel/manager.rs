@@ -3,8 +3,8 @@ use super::session::Session;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::event::{Event, EventSender};
-use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct TunnelManager {
     #[allow(dead_code)]
@@ -24,14 +24,14 @@ impl TunnelManager {
         }
     }
 
-    pub fn set_provider(&self, provider: Box<dyn TunnelProvider>) {
-        *self.provider.write() = Some(provider);
+    pub async fn set_provider(&self, provider: Box<dyn TunnelProvider>) {
+        *self.provider.write().await = Some(provider);
     }
 
     pub async fn connect(&self) -> Result<()> {
-        let display_name = {
-            let mut provider = self.provider.write();
-            let provider = provider.as_mut().ok_or(Error::ProviderNotAvailable(
+        {
+            let mut guard = self.provider.write().await;
+            let provider = guard.as_mut().ok_or(Error::ProviderNotAvailable(
                 "No provider configured".to_string(),
             ))?;
 
@@ -44,24 +44,24 @@ impl TunnelManager {
             });
 
             provider.connect().await?;
-            provider.display_name().to_string()
-        };
+        }
 
-        let (info, provider_display_name) = {
-            let mut provider_guard = self.provider.write();
-            let provider = provider_guard.as_mut().ok_or(Error::NotConnected)?;
+        let (display_name, exit_ip) = {
+            let mut guard = self.provider.write().await;
+            let provider = guard.as_mut().ok_or(Error::NotConnected)?;
             let info = provider.get_info().await?;
-            (info, provider.display_name().to_string())
+            let name = provider.display_name().to_string();
+            let ip = info.exit_ip.unwrap_or_default();
+            (name, ip)
         };
 
-        let exit_ip = info.exit_ip.clone().unwrap_or_default();
-        let mut session = Session::new(display_name);
+        let mut session = Session::new(display_name.clone());
         session.connected(exit_ip.clone());
 
-        *self.session.write() = Some(session);
+        *self.session.write().await = Some(session);
 
         self.event_sender.send(Event::Connected {
-            provider: provider_display_name,
+            provider: display_name,
             exit_ip,
         });
 
@@ -70,8 +70,8 @@ impl TunnelManager {
 
     pub async fn disconnect(&self) -> Result<()> {
         {
-            let mut provider = self.provider.write();
-            let provider = provider.as_mut().ok_or(Error::NotConnected)?;
+            let mut guard = self.provider.write().await;
+            let provider = guard.as_mut().ok_or(Error::NotConnected)?;
 
             if provider.status() != ProviderStatus::Connected {
                 return Err(Error::NotConnected);
@@ -80,7 +80,7 @@ impl TunnelManager {
             provider.disconnect().await?;
         }
 
-        *self.session.write() = None;
+        *self.session.write().await = None;
 
         self.event_sender.send(Event::Disconnected {
             reason: "User requested".to_string(),
@@ -90,21 +90,19 @@ impl TunnelManager {
     }
 
     pub async fn get_stats(&self) -> Result<TunnelStats> {
-        let stats = {
-            let provider = self.provider.read();
-            let provider = provider.as_ref().ok_or(Error::NotConnected)?;
-            provider.get_stats().await?
-        };
-        Ok(stats)
+        let guard = self.provider.read().await;
+        let provider = guard.as_ref().ok_or(Error::NotConnected)?;
+        provider.get_stats().await
     }
 
-    pub fn is_connected(&self) -> bool {
-        self.session.read().is_some()
+    pub async fn is_connected(&self) -> bool {
+        self.session.read().await.is_some()
     }
 
-    pub fn get_provider_name(&self) -> Option<String> {
+    pub async fn get_provider_name(&self) -> Option<String> {
         self.provider
             .read()
+            .await
             .as_ref()
             .map(|p| p.display_name().to_string())
     }
