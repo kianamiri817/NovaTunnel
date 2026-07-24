@@ -1,0 +1,10 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+ignore = []
+
+[database]
+path = "~/.cargo/advisory-db"
+fetch = true

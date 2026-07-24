@@ -1,0 +1,43 @@
+[package]
+name = "novatunnel-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "NovaTunnel core engine"
+
+[dependencies]
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+bytes.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+
+# Cryptography
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+
+# SOCKS5
+tokio-socks = "0.5"
+
+# Networking
+socket2 = "0.5"
+trust-dns-resolver = "0.23"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+[features]
+default = ["warp"]
+warp = []
+nova = []

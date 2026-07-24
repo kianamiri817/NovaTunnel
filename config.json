@@ -1,0 +1,10 @@
+{
+  "provider": "warp",
+  "proxy_port": 1080,
+  "auto_connect": false,
+  "kill_switch": true,
+  "dns_protection": true,
+  "dns_mode": "secure",
+  "custom_dns": null,
+  "log_level": "info"
+}
