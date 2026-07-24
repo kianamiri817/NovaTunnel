@@ -145,7 +145,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          BUNDLE_DIR="app/src-tauri/target/release/bundle"
+          BUNDLE_DIR="target/release/bundle"
           if [ -d "$BUNDLE_DIR" ]; then
             cd "$BUNDLE_DIR"
             for f in $(find . -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.dmg" \)); do
@@ -162,12 +162,12 @@ jobs:
         with:
           name: novatunnel-${{ matrix.platform }}
           path: |
-            app/src-tauri/target/release/bundle/**/*.exe
-            app/src-tauri/target/release/bundle/**/*.msi
-            app/src-tauri/target/release/bundle/**/*.AppImage
-            app/src-tauri/target/release/bundle/**/*.deb
-            app/src-tauri/target/release/bundle/**/*.tar.gz
-            app/src-tauri/target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.tar.gz
+            target/release/bundle/**/*.dmg
           retention-days: 30
 
       - name: Upload build logs on failure
@@ -176,7 +176,7 @@ jobs:
         with:
           name: build-logs-${{ matrix.platform }}
           path: |
-            app/src-tauri/target/release/build/*/output
+            target/release/build/*/output
           retention-days: 7
           if-no-files-found: ignore
 
