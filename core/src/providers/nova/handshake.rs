@@ -87,11 +87,7 @@ impl HandshakeState {
         Ok(payload)
     }
 
-    pub fn complete(
-        &mut self,
-        responder_public: &[u8],
-        responder_ephemeral: &[u8],
-    ) -> Result<()> {
+    pub fn complete(&mut self, responder_public: &[u8], responder_ephemeral: &[u8]) -> Result<()> {
         if responder_public.len() != 32 || responder_ephemeral.len() != 32 {
             return Err(crate::error::Error::Protocol(
                 "Invalid public key length".to_string(),
