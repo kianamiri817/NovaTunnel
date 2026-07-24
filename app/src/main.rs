@@ -1,9 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use novatunnel_core::{
-    config::{Config, Provider},
+    config::Config,
     error::Result,
-    event::{Event, EventSender},
     tunnel::{TunnelManager, TunnelStats},
 };
 use std::sync::Arc;
@@ -67,7 +66,7 @@ fn main() {
 
     let config = Config::load(std::path::Path::new("config.json")).unwrap_or_default();
 
-    let event_sender = EventSender::new(100);
+    let event_sender = novatunnel_core::event::EventSender::new(100);
     let tunnel_manager = Arc::new(TunnelManager::new(config.clone(), event_sender.clone()));
 
     let app_state = AppState {
