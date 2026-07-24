@@ -130,6 +130,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: pnpm tauri
+          projectPath: app
 
       - name: Generate checksums
         shell: bash

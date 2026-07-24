@@ -1,22 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use novatunnel_core::{
-    config::Config,
-    error::Result,
-    event::EventSender,
-    tunnel::{TunnelManager, TunnelStats},
-};
+use novatunnel_core::{config::Config, event::EventSender, tunnel::TunnelManager};
 use std::sync::Arc;
 use tauri::State;
 
 struct AppState {
     tunnel_manager: Arc<TunnelManager>,
     config: Arc<tokio::sync::RwLock<Config>>,
+    #[allow(dead_code)]
     event_sender: EventSender,
 }
 
 #[tauri::command]
-async fn get_status(state: State<'_, AppState>) -> Result<serde_json::Value> {
+async fn get_status(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let is_connected = state.tunnel_manager.is_connected().await;
     let provider_name = state.tunnel_manager.get_provider_name().await;
     let stats = state.tunnel_manager.get_stats().await.unwrap_or_default();
@@ -30,31 +26,47 @@ async fn get_status(state: State<'_, AppState>) -> Result<serde_json::Value> {
 }
 
 #[tauri::command]
-async fn connect(state: State<'_, AppState>) -> Result<serde_json::Value> {
-    state.tunnel_manager.connect().await?;
+async fn connect(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state
+        .tunnel_manager
+        .connect()
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn disconnect(state: State<'_, AppState>) -> Result<serde_json::Value> {
-    state.tunnel_manager.disconnect().await?;
+async fn disconnect(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    state
+        .tunnel_manager
+        .disconnect()
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn get_config(state: State<'_, AppState>) -> Result<Config> {
+async fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
     Ok(state.config.read().await.clone())
 }
 
 #[tauri::command]
-async fn update_config(state: State<'_, AppState>, config: Config) -> Result<serde_json::Value> {
+async fn update_config(
+    state: State<'_, AppState>,
+    config: Config,
+) -> Result<serde_json::Value, String> {
     *state.config.write().await = config;
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn get_stats(state: State<'_, AppState>) -> Result<TunnelStats> {
-    state.tunnel_manager.get_stats().await
+async fn get_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let stats = state.tunnel_manager.get_stats().await.unwrap_or_default();
+    Ok(serde_json::json!({
+        "bytes_sent": stats.bytes_sent,
+        "bytes_received": stats.bytes_received,
+        "latency_ms": stats.latency_ms,
+    }))
 }
 
 fn main() {
