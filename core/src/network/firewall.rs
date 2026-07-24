@@ -13,7 +13,7 @@ impl FirewallManager {
         }
     }
 
-    pub async fn apply_rules(&mut self, tunnel_interface: &str) -> Result<()> {
+    pub async fn apply_rules(&mut self, _tunnel_interface: &str) -> Result<()> {
         if self.kill_switch_enabled {
             tracing::info!("Applying kill switch firewall rules");
             // Platform-specific firewall rules would go here

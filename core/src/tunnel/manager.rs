@@ -1,6 +1,6 @@
 use super::provider::{ProviderStatus, TunnelProvider, TunnelStats};
 use super::session::Session;
-use crate::config::{Config, Provider};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::event::{Event, EventSender};
 use parking_lot::RwLock;
@@ -44,14 +44,15 @@ impl TunnelManager {
         provider.connect().await?;
 
         let info = provider.get_info().await?;
+        let exit_ip = info.exit_ip.clone().unwrap_or_default();
         let mut session = Session::new(provider.display_name().to_string());
-        session.connected(info.exit_ip.unwrap_or_default());
+        session.connected(exit_ip.clone());
 
         *self.session.write() = Some(session);
 
         self.event_sender.send(Event::Connected {
             provider: provider.display_name().to_string(),
-            exit_ip: info.exit_ip.unwrap_or_default(),
+            exit_ip,
         });
 
         Ok(())

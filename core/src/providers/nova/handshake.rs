@@ -3,13 +3,11 @@ use crate::error::Result;
 use rand::rngs::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 
-#[derive(Debug, Clone)]
 pub struct HandshakeState {
     pub state: HandshakePhase,
     pub local_static: StaticSecret,
     pub local_public: PublicKey,
     pub remote_public: Option<PublicKey>,
-    pub ephemeral: Option<EphemeralSecret>,
     pub ephemeral_public: Option<PublicKey>,
     pub shared_secret: Option<[u8; 32]>,
 }
@@ -33,7 +31,6 @@ impl HandshakeState {
             local_static,
             local_public,
             remote_public: None,
-            ephemeral: None,
             ephemeral_public: None,
             shared_secret: None,
         }
@@ -43,11 +40,9 @@ impl HandshakeState {
         let ephemeral = EphemeralSecret::random_from_rng(OsRng);
         let ephemeral_public = PublicKey::from(&ephemeral);
 
-        self.ephemeral = Some(ephemeral);
         self.ephemeral_public = Some(ephemeral_public);
         self.state = HandshakePhase::SentEphemeral;
 
-        // Send our public key and ephemeral key
         let mut payload = Vec::new();
         payload.extend_from_slice(self.local_public.as_bytes());
         payload.extend_from_slice(ephemeral_public.as_bytes());
@@ -76,19 +71,15 @@ impl HandshakeState {
 
         self.remote_public = Some(remote_public);
 
-        // Generate our ephemeral key
         let ephemeral = EphemeralSecret::random_from_rng(OsRng);
         let ephemeral_public = PublicKey::from(&ephemeral);
 
-        // Compute shared secret
         let shared_secret = ephemeral.diffie_hellman(&remote_ephemeral);
 
-        self.ephemeral = Some(ephemeral);
         self.ephemeral_public = Some(ephemeral_public);
         self.shared_secret = Some(shared_secret.as_bytes().clone());
         self.state = HandshakePhase::DerivedKeys;
 
-        // Send our ephemeral key
         let mut payload = Vec::new();
         payload.extend_from_slice(self.local_public.as_bytes());
         payload.extend_from_slice(ephemeral_public.as_bytes());
@@ -96,7 +87,11 @@ impl HandshakeState {
         Ok(payload)
     }
 
-    pub fn complete(&mut self, responder_public: &[u8], responder_ephemeral: &[u8]) -> Result<()> {
+    pub fn complete(
+        &mut self,
+        responder_public: &[u8],
+        responder_ephemeral: &[u8],
+    ) -> Result<()> {
         if responder_public.len() != 32 || responder_ephemeral.len() != 32 {
             return Err(crate::error::Error::Protocol(
                 "Invalid public key length".to_string(),
@@ -113,8 +108,7 @@ impl HandshakeState {
 
         self.remote_public = Some(remote_public);
 
-        // Compute shared secret
-        let ephemeral = self.ephemeral.as_ref().unwrap();
+        let ephemeral = EphemeralSecret::random_from_rng(OsRng);
         let shared_secret = ephemeral.diffie_hellman(&remote_ephemeral);
 
         self.shared_secret = Some(shared_secret.as_bytes().clone());

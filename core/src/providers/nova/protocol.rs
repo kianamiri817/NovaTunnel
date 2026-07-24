@@ -119,3 +119,36 @@ impl NovaPacket {
         self.flags & PacketFlags::Disconnect as u8 != 0
     }
 }
+
+pub struct NovaProtocol {
+    session_id: [u8; 32],
+}
+
+impl NovaProtocol {
+    pub fn new() -> Self {
+        let mut session_id = [0u8; 32];
+        use rand::Rng;
+        rand::thread_rng().fill(&mut session_id);
+        Self { session_id }
+    }
+
+    pub fn session_id(&self) -> &[u8; 32] {
+        &self.session_id
+    }
+
+    pub fn create_handshake_packet(&self, payload: Vec<u8>) -> NovaPacket {
+        NovaPacket::handshake(self.session_id, payload)
+    }
+
+    pub fn create_data_packet(&self, payload: Vec<u8>) -> NovaPacket {
+        NovaPacket::data(self.session_id, payload)
+    }
+
+    pub fn create_keep_alive(&self) -> NovaPacket {
+        NovaPacket::keep_alive(self.session_id)
+    }
+
+    pub fn create_disconnect(&self) -> NovaPacket {
+        NovaPacket::disconnect(self.session_id)
+    }
+}

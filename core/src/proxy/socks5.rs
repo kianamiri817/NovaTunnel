@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::tunnel::manager::TunnelManager;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -8,7 +9,7 @@ use tokio::net::TcpListener;
 pub struct Socks5Proxy {
     listener: Option<TcpListener>,
     tunnel_manager: Arc<TunnelManager>,
-    running: Arc<parking_lot::AtomicBool>,
+    running: Arc<AtomicBool>,
 }
 
 impl Socks5Proxy {
@@ -16,15 +17,14 @@ impl Socks5Proxy {
         Self {
             listener: None,
             tunnel_manager,
-            running: Arc::new(parking_lot::AtomicBool::new(false)),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn start(&mut self, addr: SocketAddr) -> Result<()> {
         let listener = TcpListener::bind(addr).await?;
         self.listener = Some(listener);
-        self.running
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.running.store(true, Ordering::SeqCst);
 
         tracing::info!("SOCKS5 proxy listening on {}", addr);
 
@@ -32,14 +32,13 @@ impl Socks5Proxy {
     }
 
     pub async fn stop(&mut self) {
-        self.running
-            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running.store(false, Ordering::SeqCst);
         self.listener = None;
         tracing::info!("SOCKS5 proxy stopped");
     }
 
     pub fn is_running(&self) -> bool {
-        self.running.load(std::sync::atomic::Ordering::SeqCst)
+        self.running.load(Ordering::SeqCst)
     }
 
     async fn handle_connection(&self, mut stream: tokio::net::TcpStream) -> Result<()> {
@@ -119,7 +118,7 @@ impl Socks5Proxy {
             tracing::debug!("SOCKS5 CONNECT to {}", target_addr);
 
             // Forward through tunnel
-            if let Ok(mut target_stream) = tokio::net::TcpStream::connect(&target_addr).await {
+            if let Ok(target_stream) = tokio::net::TcpStream::connect(&target_addr).await {
                 // Success response
                 stream
                     .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
