@@ -1,8 +1,15 @@
 use crate::error::Result;
 
 pub struct RouteManager {
+    #[allow(dead_code)]
     original_gateway: Option<String>,
     tunnel_interface: Option<String>,
+}
+
+impl Default for RouteManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RouteManager {
@@ -19,20 +26,16 @@ impl RouteManager {
             tunnel_interface
         );
         self.tunnel_interface = Some(tunnel_interface.to_string());
-        // Platform-specific route setup would go here
         Ok(())
     }
 
     pub async fn cleanup_routes(&mut self) -> Result<()> {
         tracing::info!("Cleaning up routes");
         self.tunnel_interface = None;
-        // Platform-specific route cleanup would go here
         Ok(())
     }
 
     pub fn is_tunneled(&self, dest_ip: &str) -> bool {
-        // Check if destination should go through tunnel
-        // For now, all traffic goes through tunnel
         let _ = dest_ip;
         true
     }

@@ -9,6 +9,12 @@ pub struct WarpManager {
     stats: TunnelStats,
 }
 
+impl Default for WarpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WarpManager {
     pub fn new() -> Self {
         Self {

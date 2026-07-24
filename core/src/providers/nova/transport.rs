@@ -24,6 +24,12 @@ pub struct TcpTransport {
     connected: bool,
 }
 
+impl Default for TcpTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TcpTransport {
     pub fn new() -> Self {
         Self {
@@ -80,6 +86,12 @@ impl Transport for TcpTransport {
 pub struct UdpTransport {
     socket: Option<tokio::net::UdpSocket>,
     connected: bool,
+}
+
+impl Default for UdpTransport {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UdpTransport {

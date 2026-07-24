@@ -4,6 +4,12 @@ pub struct CryptoManager {
     session_key: Option<[u8; 32]>,
 }
 
+impl Default for CryptoManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CryptoManager {
     pub fn new() -> Self {
         Self { session_key: None }

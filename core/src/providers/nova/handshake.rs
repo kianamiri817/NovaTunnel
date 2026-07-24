@@ -21,6 +21,12 @@ pub enum HandshakePhase {
     Complete,
 }
 
+impl Default for HandshakeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HandshakeState {
     pub fn new() -> Self {
         let local_static = StaticSecret::random_from_rng(OsRng);
@@ -77,7 +83,7 @@ impl HandshakeState {
         let shared_secret = ephemeral.diffie_hellman(&remote_ephemeral);
 
         self.ephemeral_public = Some(ephemeral_public);
-        self.shared_secret = Some(shared_secret.as_bytes().clone());
+        self.shared_secret = Some(*shared_secret.as_bytes());
         self.state = HandshakePhase::DerivedKeys;
 
         let mut payload = Vec::new();
@@ -107,7 +113,7 @@ impl HandshakeState {
         let ephemeral = EphemeralSecret::random_from_rng(OsRng);
         let shared_secret = ephemeral.diffie_hellman(&remote_ephemeral);
 
-        self.shared_secret = Some(shared_secret.as_bytes().clone());
+        self.shared_secret = Some(*shared_secret.as_bytes());
         self.state = HandshakePhase::Complete;
 
         Ok(())
@@ -122,6 +128,12 @@ impl HandshakeState {
 
 pub struct Handshake {
     state: HandshakeState,
+}
+
+impl Default for Handshake {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Handshake {

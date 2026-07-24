@@ -4,6 +4,12 @@ pub struct WarpConnector {
     connected: bool,
 }
 
+impl Default for WarpConnector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WarpConnector {
     pub fn new() -> Self {
         Self { connected: false }

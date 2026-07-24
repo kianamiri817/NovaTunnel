@@ -2062,6 +2062,7 @@ dependencies = [
  "hkdf",
  "log",
  "parking_lot",
+ "rand",
  "serde",
  "serde_json",
  "sha2",

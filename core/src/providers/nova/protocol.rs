@@ -124,6 +124,12 @@ pub struct NovaProtocol {
     session_id: [u8; 32],
 }
 
+impl Default for NovaProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NovaProtocol {
     pub fn new() -> Self {
         let mut session_id = [0u8; 32];
