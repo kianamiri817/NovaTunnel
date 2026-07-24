@@ -1,5 +1,5 @@
-use bytes::{Buf, BufMut, BytesMut};
 use crate::error::Result;
+use bytes::{Buf, BufMut, BytesMut};
 
 pub const NOVA_VERSION: u8 = 1;
 
@@ -50,43 +50,50 @@ impl NovaPacket {
 
     pub fn encode(&self) -> BytesMut {
         let mut buf = BytesMut::with_capacity(45 + self.payload.len());
-        
+
         buf.put_u8(self.version);
         buf.put_slice(&self.session_id);
         buf.put_u64(self.timestamp);
         buf.put_u8(self.flags);
         buf.put_u16(self.payload.len() as u16);
         buf.put_slice(&self.payload);
-        
+
         buf
     }
 
     pub fn decode(data: &[u8]) -> Result<Self> {
         if data.len() < 45 {
-            return Err(crate::error::Error::Protocol("Packet too short".to_string()));
+            return Err(crate::error::Error::Protocol(
+                "Packet too short".to_string(),
+            ));
         }
-        
+
         let mut cursor = data;
-        
+
         let version = cursor.get_u8();
         if version != NOVA_VERSION {
-            return Err(crate::error::Error::Protocol(format!("Unsupported version: {}", version)));
+            return Err(crate::error::Error::Protocol(format!(
+                "Unsupported version: {}",
+                version
+            )));
         }
-        
+
         let mut session_id = [0u8; 32];
         cursor.copy_to_slice(&mut session_id);
-        
+
         let timestamp = cursor.get_u64();
         let flags = cursor.get_u8();
         let payload_len = cursor.get_u16() as usize;
-        
+
         if cursor.remaining() < payload_len {
-            return Err(crate::error::Error::Protocol("Incomplete payload".to_string()));
+            return Err(crate::error::Error::Protocol(
+                "Incomplete payload".to_string(),
+            ));
         }
-        
+
         let mut payload = vec![0u8; payload_len];
         cursor.copy_to_slice(&mut payload);
-        
+
         Ok(Self {
             version,
             session_id,

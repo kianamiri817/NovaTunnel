@@ -11,19 +11,19 @@ impl WarpConnector {
 
     pub async fn connect(&mut self) -> Result<()> {
         tracing::info!("Establishing WARP connection");
-        
+
         // WARP connection logic would go here
         // This would interact with the WARP client daemon
-        
+
         self.connected = true;
         Ok(())
     }
 
     pub async fn disconnect(&mut self) -> Result<()> {
         tracing::info!("Tearing down WARP connection");
-        
+
         // WARP disconnection logic would go here
-        
+
         self.connected = false;
         Ok(())
     }
@@ -32,7 +32,7 @@ impl WarpConnector {
         if !self.connected {
             return Ok(false);
         }
-        
+
         // Health check logic would go here
         Ok(true)
     }
@@ -41,7 +41,7 @@ impl WarpConnector {
         if !self.connected {
             return Err(crate::error::Error::NotConnected);
         }
-        
+
         // Get exit IP from WARP
         // This would make an HTTP request to a service like ifconfig.me
         Ok("104.16.132.229".to_string()) // Placeholder

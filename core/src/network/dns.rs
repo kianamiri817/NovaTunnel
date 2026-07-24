@@ -18,22 +18,13 @@ impl DnsManager {
 
     pub fn get_dns_servers(&self) -> Vec<String> {
         match self.mode {
-            DnsMode::Auto => vec![
-                "1.1.1.1".to_string(),
-                "1.0.0.1".to_string(),
-            ],
-            DnsMode::Secure => vec![
-                "1.1.1.1".to_string(),
-                "1.0.0.1".to_string(),
-            ],
+            DnsMode::Auto => vec!["1.1.1.1".to_string(), "1.0.0.1".to_string()],
+            DnsMode::Secure => vec!["1.1.1.1".to_string(), "1.0.0.1".to_string()],
             DnsMode::Custom => {
                 if let Some(dns) = &self.custom_dns {
                     vec![dns.clone()]
                 } else {
-                    vec![
-                        "1.1.1.1".to_string(),
-                        "1.0.0.1".to_string(),
-                    ]
+                    vec!["1.1.1.1".to_string(), "1.0.0.1".to_string()]
                 }
             }
         }

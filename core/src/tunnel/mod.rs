@@ -1,7 +1,7 @@
-pub mod provider;
 pub mod manager;
+pub mod provider;
 pub mod session;
 
-pub use provider::{TunnelProvider, ProviderInfo, TunnelStats};
 pub use manager::TunnelManager;
+pub use provider::{ProviderInfo, TunnelProvider, TunnelStats};
 pub use session::Session;

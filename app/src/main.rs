@@ -1,13 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use novatunnel_core::{
+    config::{Config, Provider},
+    error::Result,
+    event::{Event, EventSender},
+    tunnel::{TunnelManager, TunnelStats},
+};
 use std::sync::Arc;
 use tauri::State;
-use novatunnel_core::{
-    tunnel::{TunnelManager, TunnelStats},
-    config::{Config, Provider},
-    event::{Event, EventSender},
-    error::Result,
-};
 
 struct AppState {
     tunnel_manager: Arc<TunnelManager>,
@@ -20,7 +20,7 @@ async fn get_status(state: State<'_, AppState>) -> Result<serde_json::Value> {
     let is_connected = state.tunnel_manager.is_connected();
     let provider_name = state.tunnel_manager.get_provider_name();
     let stats = state.tunnel_manager.get_stats().await.unwrap_or_default();
-    
+
     Ok(serde_json::json!({
         "connected": is_connected,
         "provider": provider_name.unwrap_or_else(|| "None".to_string()),
@@ -65,12 +65,11 @@ fn main() {
         )
         .init();
 
-    let config = Config::load(std::path::Path::new("config.json"))
-        .unwrap_or_default();
-    
+    let config = Config::load(std::path::Path::new("config.json")).unwrap_or_default();
+
     let event_sender = EventSender::new(100);
     let tunnel_manager = Arc::new(TunnelManager::new(config.clone(), event_sender.clone()));
-    
+
     let app_state = AppState {
         tunnel_manager,
         config: Arc::new(parking_lot::RwLock::new(config)),

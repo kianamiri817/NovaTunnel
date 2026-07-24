@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::error::Result;
 use crate::tunnel::manager::TunnelManager;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 pub struct Socks5Proxy {
     listener: Option<TcpListener>,
@@ -23,7 +23,8 @@ impl Socks5Proxy {
     pub async fn start(&mut self, addr: SocketAddr) -> Result<()> {
         let listener = TcpListener::bind(addr).await?;
         self.listener = Some(listener);
-        self.running.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
 
         tracing::info!("SOCKS5 proxy listening on {}", addr);
 
@@ -31,7 +32,8 @@ impl Socks5Proxy {
     }
 
     pub async fn stop(&mut self) {
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         self.listener = None;
         tracing::info!("SOCKS5 proxy stopped");
     }
@@ -46,7 +48,9 @@ impl Socks5Proxy {
         stream.read_exact(&mut buf).await?;
 
         if buf[0] != 0x05 {
-            return Err(crate::error::Error::Protocol("Invalid SOCKS version".to_string()));
+            return Err(crate::error::Error::Protocol(
+                "Invalid SOCKS version".to_string(),
+            ));
         }
 
         let nmethods = buf[1] as usize;
@@ -61,7 +65,9 @@ impl Socks5Proxy {
         stream.read_exact(&mut header).await?;
 
         if header[0] != 0x05 {
-            return Err(crate::error::Error::Protocol("Invalid SOCKS version".to_string()));
+            return Err(crate::error::Error::Protocol(
+                "Invalid SOCKS version".to_string(),
+            ));
         }
 
         let cmd = header[1];
@@ -102,23 +108,27 @@ impl Socks5Proxy {
                 )
             }
             _ => {
-                return Err(crate::error::Error::Protocol("Unsupported address type".to_string()));
+                return Err(crate::error::Error::Protocol(
+                    "Unsupported address type".to_string(),
+                ));
             }
         };
 
         if cmd == 0x01 {
             // CONNECT command
             tracing::debug!("SOCKS5 CONNECT to {}", target_addr);
-            
+
             // Forward through tunnel
             if let Ok(mut target_stream) = tokio::net::TcpStream::connect(&target_addr).await {
                 // Success response
-                stream.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
-                
+                stream
+                    .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                    .await?;
+
                 // Bidirectional forwarding
                 let (mut client_read, mut client_write) = stream.into_split();
                 let (mut target_read, mut target_write) = target_stream.into_split();
-                
+
                 let client_to_target = tokio::spawn(async move {
                     let mut buf = [0u8; 8192];
                     loop {
@@ -132,7 +142,7 @@ impl Socks5Proxy {
                         }
                     }
                 });
-                
+
                 let target_to_client = tokio::spawn(async move {
                     let mut buf = [0u8; 8192];
                     loop {
@@ -146,14 +156,16 @@ impl Socks5Proxy {
                         }
                     }
                 });
-                
+
                 tokio::select! {
                     _ = client_to_target => {},
                     _ = target_to_client => {},
                 }
             } else {
                 // Connection refused
-                stream.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+                stream
+                    .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                    .await?;
             }
         }
 

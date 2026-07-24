@@ -14,7 +14,10 @@ impl RouteManager {
     }
 
     pub async fn setup_routes(&mut self, tunnel_interface: &str) -> Result<()> {
-        tracing::info!("Setting up routes for tunnel interface: {}", tunnel_interface);
+        tracing::info!(
+            "Setting up routes for tunnel interface: {}",
+            tunnel_interface
+        );
         self.tunnel_interface = Some(tunnel_interface.to_string());
         // Platform-specific route setup would go here
         Ok(())

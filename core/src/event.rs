@@ -4,12 +4,26 @@ use tokio::sync::broadcast;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Event {
-    Connected { provider: String, exit_ip: String },
-    Disconnected { reason: String },
-    Connecting { provider: String },
-    Error { message: String },
-    StatsUpdated { bytes_sent: u64, bytes_received: u64 },
-    ProviderChanged { provider: String },
+    Connected {
+        provider: String,
+        exit_ip: String,
+    },
+    Disconnected {
+        reason: String,
+    },
+    Connecting {
+        provider: String,
+    },
+    Error {
+        message: String,
+    },
+    StatsUpdated {
+        bytes_sent: u64,
+        bytes_received: u64,
+    },
+    ProviderChanged {
+        provider: String,
+    },
 }
 
 #[derive(Clone)]

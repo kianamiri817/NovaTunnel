@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::error::Result;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
@@ -31,7 +31,7 @@ pub enum ProviderStatus {
 pub trait TunnelProvider: Send + Sync {
     fn name(&self) -> &str;
     fn display_name(&self) -> &str;
-    
+
     async fn connect(&mut self) -> Result<()>;
     async fn disconnect(&mut self) -> Result<()>;
     async fn health_check(&self) -> Result<bool>;

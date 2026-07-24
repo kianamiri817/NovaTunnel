@@ -1,5 +1,5 @@
-pub mod manager;
 pub mod connector;
+pub mod manager;
 
-pub use manager::WarpManager;
 pub use connector::WarpConnector;
+pub use manager::WarpManager;

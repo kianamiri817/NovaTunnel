@@ -1,7 +1,7 @@
-use async_trait::async_trait;
-use crate::error::Result;
-use crate::tunnel::provider::{TunnelProvider, ProviderInfo, ProviderStatus, TunnelStats};
 use super::connector::WarpConnector;
+use crate::error::Result;
+use crate::tunnel::provider::{ProviderInfo, ProviderStatus, TunnelProvider, TunnelStats};
+use async_trait::async_trait;
 
 pub struct WarpManager {
     status: ProviderStatus,
@@ -64,22 +64,22 @@ impl TunnelProvider for WarpManager {
     async fn connect(&mut self) -> Result<()> {
         tracing::info!("Connecting to Cloudflare WARP");
         self.status = ProviderStatus::Connecting;
-        
+
         self.connector.connect().await?;
-        
+
         self.status = ProviderStatus::Connected;
         self.stats = TunnelStats::default();
-        
+
         Ok(())
     }
 
     async fn disconnect(&mut self) -> Result<()> {
         tracing::info!("Disconnecting from Cloudflare WARP");
-        
+
         self.connector.disconnect().await?;
-        
+
         self.status = ProviderStatus::Disconnected;
-        
+
         Ok(())
     }
 
@@ -87,7 +87,7 @@ impl TunnelProvider for WarpManager {
         if self.status != ProviderStatus::Connected {
             return Ok(false);
         }
-        
+
         self.connector.health_check().await
     }
 

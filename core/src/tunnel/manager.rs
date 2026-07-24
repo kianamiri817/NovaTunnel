@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use parking_lot::RwLock;
+use super::provider::{ProviderStatus, TunnelProvider, TunnelStats};
+use super::session::Session;
 use crate::config::{Config, Provider};
 use crate::error::{Error, Result};
 use crate::event::{Event, EventSender};
-use super::provider::{TunnelProvider, ProviderStatus, TunnelStats};
-use super::session::Session;
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 pub struct TunnelManager {
     config: Arc<RwLock<Config>>,
@@ -30,7 +30,7 @@ impl TunnelManager {
     pub async fn connect(&self) -> Result<()> {
         let mut provider = self.provider.write();
         let provider = provider.as_mut().ok_or(Error::ProviderNotAvailable(
-            "No provider configured".to_string()
+            "No provider configured".to_string(),
         ))?;
 
         if provider.status() == ProviderStatus::Connected {
@@ -86,6 +86,9 @@ impl TunnelManager {
     }
 
     pub fn get_provider_name(&self) -> Option<String> {
-        self.provider.read().as_ref().map(|p| p.display_name().to_string())
+        self.provider
+            .read()
+            .as_ref()
+            .map(|p| p.display_name().to_string())
     }
 }
