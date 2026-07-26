@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use novatunnel_core::{config::Provider, config::Config, event::EventSender, providers::warp::WarpManager, tunnel::TunnelManager};
+use novatunnel_core::{
+    config::Config, config::Provider, event::EventSender, providers::warp::WarpManager,
+    tunnel::TunnelManager,
+};
 use std::sync::Arc;
 use tauri::State;
 
