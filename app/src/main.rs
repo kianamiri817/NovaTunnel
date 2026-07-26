@@ -1,14 +1,32 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use novatunnel_core::{config::Config, event::EventSender, tunnel::TunnelManager};
+use novatunnel_core::{config::Provider, config::Config, event::EventSender, providers::warp::WarpManager, tunnel::TunnelManager};
 use std::sync::Arc;
 use tauri::State;
 
 struct AppState {
     tunnel_manager: Arc<TunnelManager>,
     config: Arc<tokio::sync::RwLock<Config>>,
+    config_path: std::path::PathBuf,
     #[allow(dead_code)]
     event_sender: EventSender,
+}
+
+fn init_provider(manager: &TunnelManager, config: &Config) {
+    let runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    match config.provider {
+        Provider::Warp => {
+            runtime.block_on(async {
+                manager.set_provider(Box::new(WarpManager::new())).await;
+            });
+        }
+        Provider::Nova => {
+            tracing::warn!("Nova provider is not yet fully implemented");
+        }
+        Provider::WireGuard => {
+            tracing::warn!("WireGuard provider is not yet fully implemented");
+        }
+    }
 }
 
 #[tauri::command]
@@ -55,6 +73,7 @@ async fn update_config(
     state: State<'_, AppState>,
     config: Config,
 ) -> Result<serde_json::Value, String> {
+    config.save(&state.config_path).map_err(|e| e.to_string())?;
     *state.config.write().await = config;
     Ok(serde_json::json!({ "success": true }))
 }
@@ -77,14 +96,18 @@ fn main() {
         )
         .init();
 
-    let config = Config::load(std::path::Path::new("config.json")).unwrap_or_default();
+    let config_path = std::path::Path::new("config.json").to_path_buf();
+    let config = Config::load(&config_path).unwrap_or_default();
 
     let event_sender = EventSender::new(100);
     let tunnel_manager = Arc::new(TunnelManager::new(config.clone(), event_sender.clone()));
 
+    init_provider(&tunnel_manager, &config);
+
     let app_state = AppState {
         tunnel_manager,
         config: Arc::new(tokio::sync::RwLock::new(config)),
+        config_path,
         event_sender,
     };
 
